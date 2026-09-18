@@ -281,22 +281,6 @@ enum EqPreset: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-enum AncMode: UInt8, CaseIterable, Identifiable, Hashable {
-    case off = 0
-    case on = 1
-    case transparency = 2
-
-    var id: UInt8 { rawValue }
-
-    var label: String {
-        switch self {
-        case .off: return "Off"
-        case .on: return "ANC"
-        case .transparency: return "Ambient"
-        }
-    }
-}
-
 /// A frame received from the earbuds.
 struct WuqiMessage {
     let command: (UInt8, UInt8)

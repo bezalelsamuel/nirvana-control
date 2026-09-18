@@ -1,27 +1,42 @@
 #!/bin/bash
-# Builds the SPM executable and wraps it into a proper .app bundle so macOS
-# treats it as a GUI app: shows the Bluetooth permission prompt with our
-# Info.plist description, hides the Dock icon (LSUIElement), and can be
-# double-clicked from Finder.
+# Builds Nirvana Control (app + widget) from project.yml, installs it to
+# /Applications and restarts it.
+#
+#   Scripts/build_app.sh
+#
+# Needs XcodeGen (`brew install xcodegen`) and an Apple ID signed into Xcode
+# for the team in project.yml.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="BoatMenuBar"
-BUILD_CONFIG="release"
+BUNDLE_ID="com.local.boatmenubar"
+INSTALLED="/Applications/$APP_NAME.app"
 
 cd "$ROOT_DIR"
-swift build -c "$BUILD_CONFIG"
+xcodegen generate --quiet
+xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release -destination "platform=macOS,arch=arm64" \
+    -allowProvisioningUpdates -quiet build
 
-BIN_PATH="$(swift build -c "$BUILD_CONFIG" --show-bin-path)/$APP_NAME"
-APP_BUNDLE="$ROOT_DIR/build/$APP_NAME.app"
+BUILT="$(xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
+    -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/$APP_NAME.app"
 
-rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/MacOS"
-cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-cp "$ROOT_DIR/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+# Quit normally rather than kill: the app hangs up its RFCOMM channel on the
+# way out, and a killed one leaves the earbuds refusing new sessions.
+osascript -e "tell application id \"$BUNDLE_ID\" to quit" 2>/dev/null || true
+for _ in 1 2 3 4 5; do
+    pgrep -f "$APP_NAME.app/Contents/MacOS/$APP_NAME" >/dev/null || break
+    sleep 1
+done
 
-# Ad-hoc sign so macOS assigns a stable identity for Bluetooth/TCC prompts.
-codesign --force --deep --sign - "$APP_BUNDLE"
+# macOS keeps the previous widget process alive across a reinstall and keeps
+# drawing the old widget; stop it and restart the widget host.
+pkill -f "BoatWidget.appex/Contents/MacOS/BoatWidget" || true
 
-echo "Built $APP_BUNDLE"
-echo "Run with: open \"$APP_BUNDLE\""
+rm -rf "$INSTALLED"
+cp -R "$BUILT" "$INSTALLED"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$INSTALLED"
+killall chronod 2>/dev/null || true
+
+open "$INSTALLED"
+echo "Installed $INSTALLED (build $(plutil -extract CFBundleVersion raw "$INSTALLED/Contents/Info.plist"))"

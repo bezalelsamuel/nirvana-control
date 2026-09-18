@@ -100,6 +100,10 @@ struct MenuBarView: View {
         .background(PanelWindowFixer(width: 300, height: panelHeight))
         .animation(nil, value: device.isConnected)
         .animation(nil, value: showLog)
+        // The recorder lives on the main page: stop it if that page goes away
+        // (panel closed, or switched to the EQ page) mid-recording.
+        .onDisappear { hotKeys.stopRecording() }
+        .onChange(of: showingEQ) { _, _ in hotKeys.stopRecording() }
         .onChange(of: device.isConnected) { _, connected in
             // Reconnecting should land on the main controls, not wherever the
             // last session was left.

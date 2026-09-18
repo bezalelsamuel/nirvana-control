@@ -187,9 +187,16 @@ final class DeviceManager: ObservableObject {
             startBatteryTimer()
         case .failed(let message):
             log("Connection failed: \(message)")
+            applyAncOnConnect = false
             stopBatteryTimer()
             clearBattery()
-        default:
+        case .disconnected:
+            // Includes a cancelled connect, whose pending widget request
+            // shouldn't carry over to a later one.
+            applyAncOnConnect = false
+            stopBatteryTimer()
+            clearBattery()
+        case .connecting, .searching:
             stopBatteryTimer()
             clearBattery()
         }
@@ -284,7 +291,12 @@ final class DeviceManager: ObservableObject {
             ancMode = mode
             UserDefaults.standard.set(Int(mode.rawValue), forKey: Self.ancModeKey)
         }
-        if isConnecting { return }
+        if isConnecting {
+            // A connect is already on its way: have it apply this mode rather
+            // than read the earbuds' current one over the top of it.
+            if mode != nil { applyAncOnConnect = true }
+            return
+        }
         guard let target, target.inRange else {
             log("Widget tap ignored: earbuds aren't connected to this Mac.")
             publishToWidget()

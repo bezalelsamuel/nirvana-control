@@ -70,6 +70,15 @@ final class HotKeyManager: ObservableObject {
            let saved = try? JSONDecoder().decode(KeyCombo.self, from: data) {
             register(saved)
         }
+        // A recorder left running would swallow every plain keystroke typed
+        // into this app, so it never outlives the app losing focus.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { HotKeyManager.shared.stopRecording() }
+        }
     }
 
     // MARK: - Registration

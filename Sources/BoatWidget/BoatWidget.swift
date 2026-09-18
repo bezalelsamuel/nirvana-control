@@ -42,21 +42,19 @@ enum AncModeAppEnum: String, AppEnum {
         }
     }
 
-    var label: String {
+    /// The shared mode this intent value stands for; labels and icons come
+    /// from there. (The display names above stay as literals because App
+    /// Intents reads them at build time.)
+    var mode: AncMode {
         switch self {
-        case .off: return "Off"
-        case .on: return "ANC"
-        case .transparency: return "Ambient"
+        case .off: return .off
+        case .on: return .on
+        case .transparency: return .transparency
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .off: return "waveform"
-        case .on: return "waveform.badge.minus"
-        case .transparency: return "waveform.badge.plus"
-        }
-    }
+    var label: String { mode.label }
+    var symbol: String { mode.symbol }
 }
 
 // MARK: - Timeline
@@ -92,10 +90,10 @@ struct BoatWidgetView: View {
     private var isMedium: Bool { family == .systemMedium }
 
     private var activeMode: AncModeAppEnum {
-        switch snapshot.ancModeRawValue {
-        case 1: return .on
-        case 2: return .transparency
-        default: return .off
+        switch AncMode(rawValue: UInt8(clamping: snapshot.ancModeRawValue)) {
+        case .on: return .on
+        case .transparency: return .transparency
+        case .off, nil: return .off
         }
     }
 
@@ -222,8 +220,6 @@ private struct BatteryReadout: View {
     let caseLevel: Int?
     let size: CGFloat
 
-    /// The official app switches a bud's level to red below 21%.
-    private static let lowThreshold = 20
 
     var body: some View {
         HStack(spacing: size * 0.75) {
@@ -242,7 +238,7 @@ private struct BatteryReadout: View {
                 .foregroundStyle(.secondary)
             Text("\(level)%")
                 .monospacedDigit()
-                .foregroundStyle(level <= Self.lowThreshold ? AnyShapeStyle(Color.red) : AnyShapeStyle(.primary))
+                .foregroundStyle(level <= SharedState.lowBatteryThreshold ? AnyShapeStyle(Color.red) : AnyShapeStyle(.primary))
         }
         .fixedSize()
     }

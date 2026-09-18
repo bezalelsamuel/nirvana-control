@@ -90,14 +90,30 @@ final class RFCOMMConnection: NSObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.closeChannelSynchronously()
+            self?.closeChannelBeforeExit()
         }
     }
 
-    private func closeChannelSynchronously() {
-        guard let openChannel, openChannel.isOpen() else { return }
-        openChannel.close()
-        self.openChannel = nil
+    /// Signalled by `rfcommChannelClosed` when a close started at quit time
+    /// has actually completed.
+    private var exitCloseSignal: DispatchSemaphore?
+
+    /// `close()` only *starts* the RFCOMM disconnect, and it must run on the
+    /// thread that owns the channel. So the close is handed to the Bluetooth
+    /// thread, and quitting waits — briefly — for the earbuds to confirm.
+    private func closeChannelBeforeExit() {
+        guard let bluetoothThread else { return }
+        let closed = DispatchSemaphore(value: 0)
+        let startClose = BlockBox { [weak self] in
+            guard let self, let channel = self.openChannel, channel.isOpen() else {
+                closed.signal()
+                return
+            }
+            self.exitCloseSignal = closed
+            channel.close()
+        }
+        perform(#selector(executeBlock(_:)), on: bluetoothThread, with: startClose, waitUntilDone: true)
+        _ = closed.wait(timeout: .now() + 0.5)
     }
 
     // MARK: - Dedicated IOBluetooth thread
@@ -452,6 +468,8 @@ extension RFCOMMConnection: IOBluetoothRFCOMMChannelDelegate {
         // Abandoned attempts close too; only the live channel closing means
         // we've actually lost the earbuds.
         guard rfcommChannel === openChannel else { return }
+        exitCloseSignal?.signal()
+        exitCloseSignal = nil
         onLog?("RFCOMM channel closed.")
         openChannel = nil
         resetWriteQueue()
@@ -459,7 +477,9 @@ extension RFCOMMConnection: IOBluetoothRFCOMMChannelDelegate {
     }
 
     func rfcommChannelData(_ rfcommChannel: IOBluetoothRFCOMMChannel!, data dataPointer: UnsafeMutableRawPointer!, length dataLength: Int) {
-        guard let dataPointer, dataLength > 0 else { return }
+        // An abandoned attempt that opened late could otherwise interleave
+        // its bytes with the live channel's inside the shared decoder.
+        guard rfcommChannel === openChannel, let dataPointer, dataLength > 0 else { return }
         let bytes = Array(UnsafeBufferPointer(start: dataPointer.assumingMemoryBound(to: UInt8.self), count: dataLength))
         let messages = decoder.feed(bytes)
         if messages.isEmpty {
