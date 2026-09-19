@@ -63,7 +63,6 @@ final class RFCOMMConnection: NSObject {
 
     enum ConnectionStatus: Equatable {
         case disconnected
-        case searching
         case connecting
         case connected(name: String)
         case failed(String)
@@ -370,40 +369,12 @@ final class RFCOMMConnection: NSObject {
 // MARK: - SDP query callback (IOBluetoothDevice informal async delegate)
 
 extension RFCOMMConnection {
-    private static func uuid128(_ string: String) -> IOBluetoothSDPUUID? {
-        let hex = string.replacingOccurrences(of: "-", with: "")
-        guard hex.count == 32 else { return nil }
-        var bytes: [UInt8] = []
-        var index = hex.startIndex
-        while index < hex.endIndex {
-            let next = hex.index(index, offsetBy: 2)
-            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
-            bytes.append(byte)
-            index = next
-        }
-        return bytes.withUnsafeBytes { ptr in
-            IOBluetoothSDPUUID(bytes: ptr.baseAddress, length: ptr.count)
-        }
-    }
-
-    /// Control-channel UUIDs in priority order. 0x7034 is the one boAt's own
-    /// app hardcodes for this device family (`ko0.java`); the rest cover the
-    /// other vendor SDKs the app bundles (standard SPP, Bluetrum's custom
-    /// UUID from `ABEarbuds.java`, and Airoha's).
-    private static let candidateSppUUIDs: [IOBluetoothSDPUUID] = [
-        IOBluetoothSDPUUID(uuid16: 0x7034),
-        IOBluetoothSDPUUID(uuid16: 0x7033),
-        IOBluetoothSDPUUID(uuid16: 0x1101),
-        uuid128("B6632277-0642-458B-A7A0-23FB1DC92C93"),
-        uuid128("00001107-D102-11E1-9B23-00025B00A5A5")
-    ].compactMap { $0 }
-
-    /// Standard audio/telephony profiles. Their RFCOMM channels belong to
-    /// macOS's own Bluetooth audio stack — trying to open one (HFP on
-    /// channel 2, typically) just hangs forever.
-    private static let audioProfileUUID16s: [UInt16] = [
-        0x111E, 0x111F, 0x1108, 0x1112, 0x110B, 0x110A, 0x110C, 0x110E, 0x110F, 0x1203
-    ]
+    /// The control service: 0x7034, the UUID boAt's own app hardcodes for
+    /// this device family (`ko0.java`). The earbuds also expose 0x7033
+    /// (channel 4) and a 128-bit service (channel 6); the official app never
+    /// opens either, so neither is used as a fallback — unknown purpose, and
+    /// a wrong command on this chipset has already factory-reset a device.
+    private static let controlServiceUUID = IOBluetoothSDPUUID(uuid16: 0x7034)
 
     @objc func sdpQueryComplete(_ device: IOBluetoothDevice!, status sdpStatus: IOReturn) {
         // A query from a session the user has since cancelled. Compared by
@@ -424,38 +395,8 @@ extension RFCOMMConnection {
         }.joined(separator: ", ")
         onLog?("SDP: \(allServices.count) services — \(summary)")
 
-        var record: IOBluetoothSDPServiceRecord?
-        for uuid in Self.candidateSppUUIDs {
-            if let match = device.getServiceRecord(for: uuid) {
-                var ch: BluetoothRFCOMMChannelID = 0
-                guard match.getRFCOMMChannelID(&ch) == kIOReturnSuccess else { continue }
-                onLog?("Matched known control service → channel \(ch).")
-                record = match
-                break
-            }
-        }
-
-        if record == nil {
-            var audioChannels = Set<BluetoothRFCOMMChannelID>()
-            for uuid16 in Self.audioProfileUUID16s {
-                guard let svc = device.getServiceRecord(for: IOBluetoothSDPUUID(uuid16: uuid16)) else { continue }
-                var ch: BluetoothRFCOMMChannelID = 0
-                if svc.getRFCOMMChannelID(&ch) == kIOReturnSuccess {
-                    audioChannels.insert(ch)
-                }
-            }
-            record = allServices.first { svc in
-                var ch: BluetoothRFCOMMChannelID = 0
-                guard svc.getRFCOMMChannelID(&ch) == kIOReturnSuccess else { return false }
-                return !audioChannels.contains(ch)
-            }
-            if record != nil {
-                onLog?("No known UUID matched; using first non-audio RFCOMM service.")
-            }
-        }
-
-        guard let record else {
-            status = .failed("No RFCOMM-capable service found (\(allServices.count) services total).")
+        guard let record = device.getServiceRecord(for: Self.controlServiceUUID) else {
+            status = .failed("This device has no boAt control service (\(allServices.count) services found).")
             return
         }
 

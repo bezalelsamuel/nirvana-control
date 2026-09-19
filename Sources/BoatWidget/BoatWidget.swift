@@ -220,7 +220,6 @@ private struct BatteryReadout: View {
     let caseLevel: Int?
     let size: CGFloat
 
-
     var body: some View {
         HStack(spacing: size * 0.75) {
             if let left { reading("L", left) }

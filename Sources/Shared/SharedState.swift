@@ -110,7 +110,7 @@ public enum SharedState {
     /// A nil level means that bud (or the case) isn't reporting — the
     /// earbuds send 0 for a bud that's in the case or off, and the official
     /// app shows such a bud with no percentage at all.
-    public static func batterySummary(left: Int?, right: Int?, caseLevel: Int?, separator: String = " · ") -> String? {
+    public static func batterySummary(left: Int?, right: Int?, caseLevel: Int?) -> String? {
         var parts: [String] = []
         if let left {
             parts.append("L \(left)%")
@@ -121,7 +121,7 @@ public enum SharedState {
         if let caseLevel {
             parts.append("Case \(caseLevel)%")
         }
-        return parts.isEmpty ? nil : parts.joined(separator: separator)
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// At or below this a level counts as low — the official app turns a
@@ -175,7 +175,6 @@ public enum SharedState {
         case ancOff = "com.local.boatmenubar.command.ancOff"
         case ancOn = "com.local.boatmenubar.command.ancOn"
         case ancTransparency = "com.local.boatmenubar.command.ancTransparency"
-        case refresh = "com.local.boatmenubar.command.refresh"
 
         public var notificationName: Notification.Name {
             Notification.Name(rawValue)

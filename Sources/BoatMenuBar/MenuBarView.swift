@@ -660,7 +660,7 @@ struct MenuBarView: View {
     private var statusColor: Color {
         switch device.status {
         case .connected: return .green
-        case .connecting, .searching: return .yellow
+        case .connecting: return .yellow
         case .failed: return .red
         case .disconnected: return .gray
         }
@@ -670,7 +670,6 @@ struct MenuBarView: View {
         switch device.status {
         case .connected(let name): return name
         case .connecting: return "Connecting…"
-        case .searching: return "Searching…"
         case .failed(let message): return message
         case .disconnected: return "Not connected"
         }

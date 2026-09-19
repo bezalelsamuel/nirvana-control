@@ -83,7 +83,6 @@ enum WuqiProtocol {
         frame(command: Command.inEarDetection, payload: [enabled ? 1 : 0])
     }
 
-
     static func queryFrame(_ command: (UInt8, UInt8)) -> [UInt8] {
         frame(command: command, payload: [])
     }
@@ -299,9 +298,9 @@ final class WuqiFrameDecoder {
 
         while buffer.count >= 8 {
             let length = Int(buffer[7])
-            // No frame this protocol defines is shorter than 10 bytes or
-            // longer than the 32-byte EQ frame; anything outside that means
-            // we're misaligned, so slide forward a byte and try again.
+            // No frame this protocol defines is shorter than 10 bytes, and
+            // the longest is the 32-byte EQ frame; a length outside 10…64
+            // means we're misaligned, so slide forward a byte and try again.
             guard (10...64).contains(length) else {
                 buffer.removeFirst()
                 continue

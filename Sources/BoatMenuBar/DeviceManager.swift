@@ -59,7 +59,6 @@ final class DeviceManager: ObservableObject {
     @Published private(set) var editingCustomID: UUID?
     @Published var inEarDetection: Bool = false
     @Published private(set) var logEntries: [LogEntry] = []
-    @Published private(set) var pairedDevices: [RFCOMMConnection.PairedDeviceInfo] = []
     /// The earbuds we'd connect to, and whether macOS currently has a link to
     /// them — drives whether the panel offers Connect or Bluetooth Settings.
     @Published private(set) var target: Target?
@@ -91,9 +90,6 @@ final class DeviceManager: ObservableObject {
             microphoneGuard.isEnabled = useMacMicrophone
         }
     }
-    @Published var restoreOnConnect: Bool {
-        didSet { UserDefaults.standard.set(restoreOnConnect, forKey: Self.restoreOnConnectKey) }
-    }
 
     struct Target: Equatable {
         let address: String
@@ -105,7 +101,6 @@ final class DeviceManager: ObservableObject {
     private static let eqGainsKey = "eqGains"
     private static let ancModeKey = "ancMode"
     private static let autoConnectKey = "autoConnect"
-    private static let restoreOnConnectKey = "restoreOnConnect"
     private static let disconnectOnLidCloseKey = "disconnectOnLidClose"
     private static let useMacMicrophoneKey = "useMacMicrophone"
     private static let customPresetsKey = "customEqPresets"
@@ -115,7 +110,6 @@ final class DeviceManager: ObservableObject {
     /// Enough history to cover a long debugging session in the saved file.
     private static let maxLogEntries = 5000
 
-    private var autoConnectTimer: Timer?
     private var batteryTimer: Timer?
     /// How often to re-read battery while connected, since it drains.
     private static let batteryRefreshInterval: TimeInterval = 60
@@ -123,7 +117,7 @@ final class DeviceManager: ObservableObject {
     /// doesn't immediately undo it. Cleared on an explicit Connect.
     private var manuallyReleased = false
     /// A widget tap that arrived while disconnected: apply that ANC mode once
-    /// the connection opens, whatever the restore-on-connect setting says.
+    /// the connection opens, instead of reading the earbuds' current one.
     private var applyAncOnConnect = false
     /// The earbuds the lid-close disconnected, to link again on open.
     private var disconnectedByLid: String?
@@ -146,7 +140,7 @@ final class DeviceManager: ObservableObject {
 
     var isConnecting: Bool {
         switch status {
-        case .connecting, .searching: return true
+        case .connecting: return true
         default: return false
         }
     }
@@ -158,7 +152,6 @@ final class DeviceManager: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         autoConnect = defaults.object(forKey: Self.autoConnectKey) as? Bool ?? true
-        restoreOnConnect = defaults.object(forKey: Self.restoreOnConnectKey) as? Bool ?? true
         disconnectOnLidClose = defaults.object(forKey: Self.disconnectOnLidCloseKey) as? Bool ?? true
         useMacMicrophone = defaults.object(forKey: Self.useMacMicrophoneKey) as? Bool ?? true
 
@@ -230,7 +223,7 @@ final class DeviceManager: ObservableObject {
             applyAncOnConnect = false
             stopBatteryTimer()
             clearBattery()
-        case .connecting, .searching:
+        case .connecting:
             stopBatteryTimer()
             clearBattery()
         }
@@ -306,37 +299,32 @@ final class DeviceManager: ObservableObject {
 
     private func handleWidgetCommand(_ command: SharedState.Command) {
         log("Widget: \(command.logDescription)")
-        let mode: AncMode?
+        let mode: AncMode
         switch command {
         case .ancOff: mode = .off
         case .ancOn: mode = .on
         case .ancTransparency: mode = .transparency
-        case .refresh: mode = nil
         }
 
         if isConnected {
-            if let mode { setAncMode(mode) } else { refreshBattery() }
+            setAncMode(mode)
             return
         }
 
-        // Not connected: remember the choice and connect. Restoring settings
-        // on connect then applies it, so a widget tap still does something.
-        if let mode {
-            ancMode = mode
-            UserDefaults.standard.set(Int(mode.rawValue), forKey: Self.ancModeKey)
-        }
-        if isConnecting {
-            // A connect is already on its way: have it apply this mode rather
-            // than read the earbuds' current one over the top of it.
-            if mode != nil { applyAncOnConnect = true }
-            return
-        }
+        // Not connected: remember the choice and connect; `onConnected`
+        // then applies it, so a widget tap still does something.
+        ancMode = mode
+        UserDefaults.standard.set(Int(mode.rawValue), forKey: Self.ancModeKey)
+        // A connect already on its way picks this up too, rather than reading
+        // the earbuds' current mode over the top of it.
+        applyAncOnConnect = true
+        if isConnecting { return }
         guard let target, target.inRange else {
+            applyAncOnConnect = false
             log("Widget tap ignored: earbuds aren't connected to this Mac.")
             publishToWidget()
             return
         }
-        applyAncOnConnect = mode != nil
         connect(toAddress: target.address)
     }
 
@@ -363,7 +351,6 @@ final class DeviceManager: ObservableObject {
             Task { @MainActor in self?.attemptAutoConnect() }
         }
         RunLoop.main.add(timer, forMode: .common)
-        autoConnectTimer = timer
     }
 
     /// Opens the control channel once macOS has a classic Bluetooth link to
@@ -382,7 +369,7 @@ final class DeviceManager: ObservableObject {
     /// The earbuds' own ANC mode and in-ear setting win: they're read, not
     /// overwritten, so a change made by long-pressing a bud survives a
     /// reconnect. The one exception is a widget tap that asked for a mode
-    /// while disconnected. EQ is still restored — it's the app's setting.
+    /// while disconnected. EQ is always restored — it's the app's setting.
     private func onConnected() {
         if applyAncOnConnect {
             connection.send(frame: WuqiProtocol.ancFrame(ancMode))
@@ -391,9 +378,7 @@ final class DeviceManager: ObservableObject {
         }
         applyAncOnConnect = false
         connection.send(frame: WuqiProtocol.queryFrame(WuqiProtocol.Command.queryInEarStatus))
-        if restoreOnConnect {
-            commitEq()
-        }
+        commitEq()
         refreshBattery()
         connection.send(frame: WuqiProtocol.queryFrame(WuqiProtocol.Command.queryTwsStatus))
     }
@@ -412,14 +397,10 @@ final class DeviceManager: ObservableObject {
 
     // MARK: - Connection
 
-    func refreshPairedDevices() {
-        pairedDevices = connection.listPairedDevices()
-        refreshTarget()
-    }
-
     /// Picks the device we'd control: the one we connected to last, else a
     /// boAt-looking name among the paired devices.
-    private func refreshTarget() {
+    func refreshPairedDevices() {
+        let pairedDevices = connection.listPairedDevices()
         let remembered = UserDefaults.standard.string(forKey: Self.lastDeviceAddressKey)
         let match = pairedDevices.first { $0.id == remembered }
             ?? connection.likelyNirvanaDevice(in: pairedDevices)
@@ -846,7 +827,6 @@ final class DeviceManager: ObservableObject {
         switch status {
         case .connected(let name): return "connected to \(name)"
         case .connecting: return "connecting"
-        case .searching: return "searching"
         case .failed(let message): return "failed — \(message)"
         case .disconnected: return "not connected"
         }
@@ -877,7 +857,6 @@ private extension SharedState.Command {
         case .ancOff: return "ANC → Off tapped"
         case .ancOn: return "ANC → ANC tapped"
         case .ancTransparency: return "ANC → Ambient tapped"
-        case .refresh: return "refresh tapped"
         }
     }
 }
