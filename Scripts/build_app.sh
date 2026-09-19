@@ -9,16 +9,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="BoatMenuBar"
+SCHEME="BoatMenuBar"          # Xcode target/scheme
+APP_NAME="Nirvana Control"    # the built app (PRODUCT_NAME)
 BUNDLE_ID="com.local.boatmenubar"
 INSTALLED="/Applications/$APP_NAME.app"
 
 cd "$ROOT_DIR"
 xcodegen generate --quiet
-xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release -destination "platform=macOS,arch=arm64" \
+xcodebuild -project "$SCHEME.xcodeproj" -scheme "$SCHEME" -configuration Release -destination "platform=macOS,arch=arm64" \
     -allowProvisioningUpdates -quiet build
 
-BUILT="$(xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
+BUILT="$(xcodebuild -project "$SCHEME.xcodeproj" -scheme "$SCHEME" -configuration Release \
     -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/$APP_NAME.app"
 
 # Quit normally rather than kill: the app hangs up its RFCOMM channel on the

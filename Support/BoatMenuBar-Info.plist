@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>BoatMenuBar</string>
+    <string>$(PRODUCT_NAME)</string>
     <key>CFBundleDisplayName</key>
     <string>Nirvana Control</string>
     <key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>BoatMenuBar</string>
+    <string>$(EXECUTABLE_NAME)</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
     <key>LSUIElement</key>
