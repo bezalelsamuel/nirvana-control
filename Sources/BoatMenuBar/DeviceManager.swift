@@ -79,6 +79,11 @@ final class DeviceManager: ObservableObject {
     /// Mirrors the app's login item, so the toggle always shows what macOS
     /// will actually do.
     @Published private(set) var openAtLogin = false
+    /// Drop the earbuds' Bluetooth link when the lid closes, so they're
+    /// free for the phone instead of staying tied to a closed Mac.
+    @Published var disconnectOnLidClose: Bool {
+        didSet { UserDefaults.standard.set(disconnectOnLidClose, forKey: Self.disconnectOnLidCloseKey) }
+    }
     @Published var restoreOnConnect: Bool {
         didSet { UserDefaults.standard.set(restoreOnConnect, forKey: Self.restoreOnConnectKey) }
     }
@@ -94,6 +99,7 @@ final class DeviceManager: ObservableObject {
     private static let ancModeKey = "ancMode"
     private static let autoConnectKey = "autoConnect"
     private static let restoreOnConnectKey = "restoreOnConnect"
+    private static let disconnectOnLidCloseKey = "disconnectOnLidClose"
     private static let customPresetsKey = "customEqPresets"
     private static let caseBatteryKey = "lastCaseBattery"
     private static let caseReadingDateKey = "lastCaseReadingDate"
@@ -133,11 +139,13 @@ final class DeviceManager: ObservableObject {
     }
 
     private let connection = RFCOMMConnection()
+    private let lidMonitor = LidMonitor()
 
     init() {
         let defaults = UserDefaults.standard
         autoConnect = defaults.object(forKey: Self.autoConnectKey) as? Bool ?? true
         restoreOnConnect = defaults.object(forKey: Self.restoreOnConnectKey) as? Bool ?? true
+        disconnectOnLidClose = defaults.object(forKey: Self.disconnectOnLidCloseKey) as? Bool ?? true
 
         if let saved = defaults.array(forKey: Self.eqGainsKey) as? [Int],
            saved.count == WuqiProtocol.bandCount {
@@ -168,6 +176,9 @@ final class DeviceManager: ObservableObject {
 
         HotKeyManager.shared.onTrigger = { [weak self] in
             self?.cycleAncMode()
+        }
+        lidMonitor.onLidClosed = { [weak self] in
+            self?.lidDidClose()
         }
 
         observeWidgetCommands()
@@ -424,6 +435,17 @@ final class DeviceManager: ObservableObject {
         UserDefaults.standard.set(address, forKey: Self.lastDeviceAddressKey)
         log("Connecting to \(address)…")
         connection.connect(toAddress: address)
+    }
+
+    /// Disconnects the earbuds from the Mac at the Bluetooth level. Not a
+    /// manual release: if macOS links them again later (lid reopened, buds
+    /// reconnected), auto-connect takes control as usual.
+    private func lidDidClose() {
+        guard disconnectOnLidClose,
+              let address = target?.address ?? UserDefaults.standard.string(forKey: Self.lastDeviceAddressKey),
+              connection.isDeviceConnected(address: address) else { return }
+        log("Lid closed — disconnecting the earbuds from this Mac.")
+        connection.disconnectDevice(address: address)
     }
 
     func disconnect() {

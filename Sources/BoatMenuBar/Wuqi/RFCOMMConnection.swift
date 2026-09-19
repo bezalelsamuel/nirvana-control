@@ -221,6 +221,22 @@ final class RFCOMMConnection: NSObject {
         }
     }
 
+    /// Disconnects the earbuds from the Mac entirely, as Disconnect in
+    /// System Settings does — audio included, not just the control channel.
+    /// This is a Bluetooth link operation, not a command to the earbuds.
+    /// The control channel is hung up first so the earbuds never see it
+    /// vanish mid-session.
+    func disconnectDevice(address: String) {
+        disconnect()
+        onBluetoothThread {
+            guard let device = IOBluetoothDevice(addressString: address), device.isConnected() else { return }
+            let result = device.closeConnection()
+            if result != kIOReturnSuccess {
+                self.onLog?("Couldn't disconnect the earbuds (IOReturn \(result)).")
+            }
+        }
+    }
+
     // MARK: - Sending (one command at a time)
 
     /// Queues one already-framed packet for the control channel.

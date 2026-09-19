@@ -120,7 +120,7 @@ struct MenuBarView: View {
     }
 
     private var panelHeight: CGFloat {
-        let base: CGFloat = device.isConnected ? 428 : 175
+        let base: CGFloat = device.isConnected ? 459 : 175
         return base + (showLog ? 120 : 0)
     }
 
@@ -212,7 +212,7 @@ struct MenuBarView: View {
     private static let pageAnimation: Animation = .snappy(duration: 0.32)
     /// Both pages share this height, so sliding between them never resizes
     /// the window mid-animation — a resizing MenuBarExtra panel ghosts.
-    private static let controlsHeight: CGFloat = 300
+    private static let controlsHeight: CGFloat = 331
 
     /// Two pages in one fixed area, like Control Center's drill-in: the main
     /// controls, and the equalizer pushed in from the right.
@@ -303,6 +303,13 @@ struct MenuBarView: View {
             Divider().padding(.leading, 10)
             SettingRow("Connect Automatically") {
                 Toggle("", isOn: $device.autoConnect)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+            Divider().padding(.leading, 10)
+            SettingRow("Disconnect When Lid Closes") {
+                Toggle("", isOn: $device.disconnectOnLidClose)
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .controlSize(.small)
