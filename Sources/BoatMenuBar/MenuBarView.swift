@@ -65,10 +65,15 @@ struct MenuBarView: View {
     @ObservedObject var device: DeviceManager
     @ObservedObject private var hotKeys = HotKeyManager.shared
     @State private var showLog = false
-    @State private var showingEQ = false
+    @State private var page: Page = .main
     @State private var naming: NamingMode?
     @State private var nameDraft = ""
     @FocusState private var nameFieldFocused: Bool
+
+    /// The pages of the connected panel; the main one, and two drill-ins.
+    private enum Page {
+        case main, equalizer, settings
+    }
 
     /// Inline naming in the preset row: a new preset, or renaming one.
     private enum NamingMode: Equatable {
@@ -100,15 +105,15 @@ struct MenuBarView: View {
         .background(PanelWindowFixer(width: 300, height: panelHeight))
         .animation(nil, value: device.isConnected)
         .animation(nil, value: showLog)
-        // The recorder lives on the main page: stop it if that page goes away
-        // (panel closed, or switched to the EQ page) mid-recording.
+        // The recorder lives on the settings page: stop it if that page goes
+        // away (panel closed, or back to the main page) mid-recording.
         .onDisappear { hotKeys.stopRecording() }
-        .onChange(of: showingEQ) { _, _ in hotKeys.stopRecording() }
+        .onChange(of: page) { _, _ in hotKeys.stopRecording() }
         .onChange(of: device.isConnected) { _, connected in
             // Reconnecting should land on the main controls, not wherever the
             // last session was left.
             if !connected {
-                showingEQ = false
+                page = .main
                 naming = nil
             }
         }
@@ -120,7 +125,7 @@ struct MenuBarView: View {
     }
 
     private var panelHeight: CGFloat {
-        let base: CGFloat = device.isConnected ? 459 : 175
+        let base: CGFloat = device.isConnected ? 396 : 175
         return base + (showLog ? 120 : 0)
     }
 
@@ -212,18 +217,22 @@ struct MenuBarView: View {
     private static let pageAnimation: Animation = .snappy(duration: 0.32)
     /// Both pages share this height, so sliding between them never resizes
     /// the window mid-animation — a resizing MenuBarExtra panel ghosts.
-    private static let controlsHeight: CGFloat = 331
+    private static let controlsHeight: CGFloat = 268
 
-    /// Two pages in one fixed area, like Control Center's drill-in: the main
-    /// controls, and the equalizer pushed in from the right.
+    /// Pages in one fixed area, like Control Center's drill-in: the main
+    /// controls, with the equalizer or settings pushed in from the right.
     private var controls: some View {
         ZStack(alignment: .top) {
-            if showingEQ {
-                equalizerPage
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else {
+            switch page {
+            case .main:
                 mainPage
                     .transition(.move(edge: .leading).combined(with: .opacity))
+            case .equalizer:
+                equalizerPage
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            case .settings:
+                settingsPage
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(height: Self.controlsHeight, alignment: .top)
@@ -237,6 +246,7 @@ struct MenuBarView: View {
             equalizerRow
             settingsGroup
             releaseControl
+            moreSettingsRow
         }
     }
 
@@ -267,7 +277,7 @@ struct MenuBarView: View {
 
     private var equalizerRow: some View {
         Button {
-            withAnimation(Self.pageAnimation) { showingEQ = true }
+            withAnimation(Self.pageAnimation) { page = .equalizer }
         } label: {
             HStack(spacing: 6) {
                 Text("Equalizer")
@@ -292,44 +302,47 @@ struct MenuBarView: View {
     private var settingsGroup: some View {
         VStack(spacing: 0) {
             SettingRow("In-Ear Detection") {
-                Toggle("", isOn: Binding(
+                switchControl(Binding(
                     get: { device.inEarDetection },
                     set: { device.setInEarDetection($0) }
                 ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .controlSize(.small)
             }
             Divider().padding(.leading, 10)
             SettingRow("Connect Automatically") {
-                Toggle("", isOn: $device.autoConnect)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .controlSize(.small)
-            }
-            Divider().padding(.leading, 10)
-            SettingRow("Disconnect When Lid Closes") {
-                Toggle("", isOn: $device.disconnectOnLidClose)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .controlSize(.small)
-            }
-            Divider().padding(.leading, 10)
-            SettingRow("Open at Login") {
-                Toggle("", isOn: Binding(
-                    get: { device.openAtLogin },
-                    set: { device.setOpenAtLogin($0) }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .controlSize(.small)
-            }
-            Divider().padding(.leading, 10)
-            SettingRow("Cycle ANC Shortcut") {
-                shortcutControl
+                switchControl($device.autoConnect)
             }
         }
         .background(GroupBackground())
+    }
+
+    private func switchControl(_ isOn: Binding<Bool>) -> some View {
+        Toggle("", isOn: isOn)
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+    }
+
+    /// A smaller cousin of the Equalizer row, for the settings that are set
+    /// once and rarely touched again.
+    private var moreSettingsRow: some View {
+        Button {
+            withAnimation(Self.pageAnimation) { page = .settings }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "gearshape")
+                Text("Additional Settings")
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(GroupBackground())
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var releaseControl: some View {
@@ -344,6 +357,66 @@ struct MenuBarView: View {
         }
     }
 
+    // MARK: - Settings page
+
+    private var settingsPage: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                Text("Additional Settings")
+                    .font(.headline)
+                HStack {
+                    backButton
+                    Spacer()
+                }
+                .font(.callout)
+            }
+            .frame(height: 22)
+
+            VStack(spacing: 0) {
+                SettingRow("Disconnect When Lid Closes") {
+                    switchControl($device.disconnectOnLidClose)
+                }
+                Divider().padding(.leading, 10)
+                SettingRow("Use Mac Microphone") {
+                    switchControl($device.useMacMicrophone)
+                }
+                Divider().padding(.leading, 10)
+                SettingRow("Open at Login") {
+                    switchControl(Binding(
+                        get: { device.openAtLogin },
+                        set: { device.setOpenAtLogin($0) }
+                    ))
+                }
+                Divider().padding(.leading, 10)
+                SettingRow("Cycle ANC Shortcut") {
+                    shortcutControl
+                }
+            }
+            .background(GroupBackground())
+
+            Text("Use Mac Microphone keeps calls and dictation on the Mac's mic, so the earbuds' sound quality doesn't drop.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var backButton: some View {
+        Button {
+            naming = nil
+            withAnimation(Self.pageAnimation) { page = .main }
+        } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "chevron.left")
+                    .font(.callout.weight(.semibold))
+                Text("Back")
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
+    }
+
     // MARK: - Equalizer page
 
     private var equalizerPage: some View {
@@ -352,19 +425,7 @@ struct MenuBarView: View {
                 Text("Equalizer")
                     .font(.headline)
                 HStack {
-                    Button {
-                        naming = nil
-                        withAnimation(Self.pageAnimation) { showingEQ = false }
-                    } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "chevron.left")
-                                .font(.callout.weight(.semibold))
-                            Text("Back")
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
+                    backButton
                     Spacer()
                     // Only for hand-tuned curves; kept in the layout either
                     // way so the title doesn't shift when it appears.

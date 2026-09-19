@@ -84,6 +84,13 @@ final class DeviceManager: ObservableObject {
     @Published var disconnectOnLidClose: Bool {
         didSet { UserDefaults.standard.set(disconnectOnLidClose, forKey: Self.disconnectOnLidCloseKey) }
     }
+    /// Keep the Mac's own mic as the input instead of the earbuds'.
+    @Published var useMacMicrophone: Bool {
+        didSet {
+            UserDefaults.standard.set(useMacMicrophone, forKey: Self.useMacMicrophoneKey)
+            microphoneGuard.isEnabled = useMacMicrophone
+        }
+    }
     @Published var restoreOnConnect: Bool {
         didSet { UserDefaults.standard.set(restoreOnConnect, forKey: Self.restoreOnConnectKey) }
     }
@@ -100,6 +107,7 @@ final class DeviceManager: ObservableObject {
     private static let autoConnectKey = "autoConnect"
     private static let restoreOnConnectKey = "restoreOnConnect"
     private static let disconnectOnLidCloseKey = "disconnectOnLidClose"
+    private static let useMacMicrophoneKey = "useMacMicrophone"
     private static let customPresetsKey = "customEqPresets"
     private static let caseBatteryKey = "lastCaseBattery"
     private static let caseReadingDateKey = "lastCaseReadingDate"
@@ -145,12 +153,14 @@ final class DeviceManager: ObservableObject {
 
     private let connection = RFCOMMConnection()
     private let lidMonitor = LidMonitor()
+    private let microphoneGuard = MicrophoneGuard()
 
     init() {
         let defaults = UserDefaults.standard
         autoConnect = defaults.object(forKey: Self.autoConnectKey) as? Bool ?? true
         restoreOnConnect = defaults.object(forKey: Self.restoreOnConnectKey) as? Bool ?? true
         disconnectOnLidClose = defaults.object(forKey: Self.disconnectOnLidCloseKey) as? Bool ?? true
+        useMacMicrophone = defaults.object(forKey: Self.useMacMicrophoneKey) as? Bool ?? true
 
         if let saved = defaults.array(forKey: Self.eqGainsKey) as? [Int],
            saved.count == WuqiProtocol.bandCount {
@@ -188,6 +198,11 @@ final class DeviceManager: ObservableObject {
         lidMonitor.onLidOpened = { [weak self] in
             self?.lidDidOpen()
         }
+        microphoneGuard.onSwitch = { [weak self] line in
+            self?.log(line)
+        }
+        // didSet doesn't run for assignments in init.
+        microphoneGuard.isEnabled = useMacMicrophone
 
         observeWidgetCommands()
         publishToWidget()
