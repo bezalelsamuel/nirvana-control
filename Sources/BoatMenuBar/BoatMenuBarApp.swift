@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct BoatMenuBarApp: App {
-    @StateObject private var device = DeviceManager()
+    @StateObject private var device = DeviceManager.shared
 
     var body: some Scene {
         MenuBarExtra {

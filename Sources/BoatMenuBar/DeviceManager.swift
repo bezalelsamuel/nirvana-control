@@ -50,6 +50,10 @@ enum EqSelection: Hashable {
 
 @MainActor
 final class DeviceManager: ObservableObject {
+    /// The one instance, shared by the menu bar UI and the Siri action (which
+    /// macOS may run before the panel has ever been opened).
+    static let shared = DeviceManager()
+
     @Published private(set) var status: RFCOMMConnection.ConnectionStatus = .disconnected
     @Published var ancMode: AncMode = .off
     @Published private(set) var eqGains: [Int8] = Array(repeating: 0, count: WuqiProtocol.bandCount)
@@ -149,7 +153,7 @@ final class DeviceManager: ObservableObject {
     private let lidMonitor = LidMonitor()
     private let microphoneGuard = MicrophoneGuard()
 
-    init() {
+    private init() {
         let defaults = UserDefaults.standard
         autoConnect = defaults.object(forKey: Self.autoConnectKey) as? Bool ?? true
         disconnectOnLidClose = defaults.object(forKey: Self.disconnectOnLidCloseKey) as? Bool ?? true
@@ -305,10 +309,23 @@ final class DeviceManager: ObservableObject {
         case .ancOn: mode = .on
         case .ancTransparency: mode = .transparency
         }
+        requestAncMode(mode)
+    }
 
+    enum AncRequestOutcome {
+        case applied
+        case connecting
+        case notLinked
+    }
+
+    /// A mode asked for from outside the panel — the widget or Siri. Applied
+    /// straight away when connected; otherwise the app connects first and
+    /// applies it once the channel opens.
+    @discardableResult
+    func requestAncMode(_ mode: AncMode) -> AncRequestOutcome {
         if isConnected {
             setAncMode(mode)
-            return
+            return .applied
         }
 
         // Not connected: remember the choice and connect; `onConnected`
@@ -318,14 +335,16 @@ final class DeviceManager: ObservableObject {
         // A connect already on its way picks this up too, rather than reading
         // the earbuds' current mode over the top of it.
         applyAncOnConnect = true
-        if isConnecting { return }
+        if isConnecting { return .connecting }
+        refreshPairedDevices()
         guard let target, target.inRange else {
             applyAncOnConnect = false
-            log("Widget tap ignored: earbuds aren't connected to this Mac.")
+            log("Request ignored: earbuds aren't connected to this Mac.")
             publishToWidget()
-            return
+            return .notLinked
         }
         connect(toAddress: target.address)
+        return .connecting
     }
 
     /// Mirrors current state into the App Group so the widget can render it,
