@@ -2,15 +2,21 @@ import AppKit
 import IOKit
 import IOKit.pwr_mgt
 
-/// Reports when the MacBook's lid closes.
+/// Reports the MacBook's lid closing (when that puts the Mac to sleep) and
+/// opening again.
 ///
 /// The power-management root domain broadcasts a clamshell-state message the
-/// moment the lid moves — whether the Mac then sleeps or stays awake on an
-/// external display. System sleep is watched too, as a backstop in case that
-/// message loses the race with sleep.
+/// moment the lid moves. Its argument also says whether closing the lid will
+/// sleep the Mac — it won't when an external display keeps it running
+/// (clamshell mode), and that case is deliberately ignored. System sleep and
+/// wake are watched too, as a backstop: the lid message can lose the race
+/// with sleep, and a lid opened while asleep may only show up as a wake.
 @MainActor
 final class LidMonitor {
+    /// The lid closed and the Mac is going to sleep.
     var onLidClosed: (() -> Void)?
+    /// The lid opened (or the Mac woke with it open).
+    var onLidOpened: (() -> Void)?
 
     private var rootDomain: io_service_t = 0
     private var notifyPort: IONotificationPortRef?
@@ -19,11 +25,14 @@ final class LidMonitor {
     /// `kIOPMMessageClamshellStateChange` — a C macro Swift can't import:
     /// iokit_family_msg(sub_iokit_powermanagement, 0x100).
     private static let clamshellStateChange: natural_t = 0xE003_4100
-    /// Bit in that message's argument that is set while the lid is closed.
-    private static let clamshellClosedBit = 1
+    /// `kClamshellStateBit`: set while the lid is closed.
+    private static let clamshellClosedBit = 1 << 0
+    /// `kClamshellSleepBit`: set when a closed lid will sleep the Mac.
+    private static let clamshellSleepBit = 1 << 1
 
     init() {
         rootDomain = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        Self.shared = self
         guard rootDomain != 0, let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
         notifyPort = port
         IONotificationPortSetDispatchQueue(port, .main)
@@ -34,26 +43,35 @@ final class LidMonitor {
             kIOGeneralInterest,
             { _, _, messageType, argument in
                 guard messageType == LidMonitor.clamshellStateChange else { return }
-                let closed = Int(bitPattern: argument) & LidMonitor.clamshellClosedBit != 0
-                guard closed else { return }
-                MainActor.assumeIsolated { LidMonitor.shared?.onLidClosed?() }
+                let bits = Int(bitPattern: argument)
+                let closed = bits & LidMonitor.clamshellClosedBit != 0
+                let willSleep = bits & LidMonitor.clamshellSleepBit != 0
+                MainActor.assumeIsolated {
+                    guard let monitor = LidMonitor.shared else { return }
+                    if !closed {
+                        monitor.onLidOpened?()
+                    } else if willSleep {
+                        monitor.onLidClosed?()
+                    }
+                }
             },
             nil,
             &notifier
         )
 
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.willSleepNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 guard let monitor = LidMonitor.shared, monitor.isLidClosed else { return }
                 monitor.onLidClosed?()
             }
         }
-
-        Self.shared = self
+        workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                guard let monitor = LidMonitor.shared, !monitor.isLidClosed else { return }
+                monitor.onLidOpened?()
+            }
+        }
     }
 
     /// The IOKit callback is a C function pointer and can't capture `self`.

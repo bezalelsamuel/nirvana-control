@@ -117,6 +117,11 @@ final class DeviceManager: ObservableObject {
     /// A widget tap that arrived while disconnected: apply that ANC mode once
     /// the connection opens, whatever the restore-on-connect setting says.
     private var applyAncOnConnect = false
+    /// The earbuds the lid-close disconnected, to link again on open.
+    private var disconnectedByLid: String?
+    private var lidReconnectRunning = false
+    private static let lidReconnectAttempts = 5
+    private static let lidReconnectDelay: Double = 3
 
     private enum BatteryPart { case left, right, caseLevel }
     /// Parts already alerted for in their current low spell, so each gets
@@ -179,6 +184,9 @@ final class DeviceManager: ObservableObject {
         }
         lidMonitor.onLidClosed = { [weak self] in
             self?.lidDidClose()
+        }
+        lidMonitor.onLidOpened = { [weak self] in
+            self?.lidDidOpen()
         }
 
         observeWidgetCommands()
@@ -437,15 +445,61 @@ final class DeviceManager: ObservableObject {
         connection.connect(toAddress: address)
     }
 
-    /// Disconnects the earbuds from the Mac at the Bluetooth level. Not a
-    /// manual release: if macOS links them again later (lid reopened, buds
-    /// reconnected), auto-connect takes control as usual.
+    /// Disconnects the earbuds from the Mac at the Bluetooth level. Only
+    /// called when closing the lid sleeps the Mac — with an external display
+    /// keeping it awake, the earbuds stay. Not a manual release: once they're
+    /// linked again, auto-connect takes control as usual.
     private func lidDidClose() {
         guard disconnectOnLidClose,
               let address = target?.address ?? UserDefaults.standard.string(forKey: Self.lastDeviceAddressKey),
               connection.isDeviceConnected(address: address) else { return }
         log("Lid closed — disconnecting the earbuds from this Mac.")
+        disconnectedByLid = address
         connection.disconnectDevice(address: address)
+    }
+
+    /// Links the earbuds again when the lid opens — but only if closing it is
+    /// what disconnected them, so it never pulls in buds the user had
+    /// disconnected themselves.
+    private func lidDidOpen() {
+        guard disconnectedByLid != nil, !lidReconnectRunning else { return }
+        guard disconnectOnLidClose else {
+            disconnectedByLid = nil // turned off while the lid was shut
+            return
+        }
+        lidReconnectRunning = true
+        log("Lid opened — reconnecting the earbuds.")
+        reconnectAfterLid(attempt: 1)
+    }
+
+    /// Bluetooth can take a few seconds to come back after wake, and the buds
+    /// may be in their case, so this tries a handful of times, then gives up.
+    private func reconnectAfterLid(attempt: Int) {
+        guard let address = disconnectedByLid, !lidMonitor.isLidClosed else {
+            lidReconnectRunning = false
+            return
+        }
+        connection.reconnectDevice(address: address) { [weak self] linked in
+            Task { @MainActor in
+                guard let self else { return }
+                if linked {
+                    self.log("Earbuds reconnected.")
+                    self.finishLidReconnect()
+                    self.attemptAutoConnect()
+                } else if attempt < Self.lidReconnectAttempts {
+                    try? await Task.sleep(for: .seconds(Self.lidReconnectDelay))
+                    self.reconnectAfterLid(attempt: attempt + 1)
+                } else {
+                    self.log("Couldn't reconnect the earbuds after opening the lid (are they in the case?).")
+                    self.finishLidReconnect()
+                }
+            }
+        }
+    }
+
+    private func finishLidReconnect() {
+        disconnectedByLid = nil
+        lidReconnectRunning = false
     }
 
     func disconnect() {

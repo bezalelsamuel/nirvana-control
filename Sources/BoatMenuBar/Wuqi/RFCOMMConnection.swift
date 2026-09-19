@@ -237,6 +237,25 @@ final class RFCOMMConnection: NSObject {
         }
     }
 
+    /// Reconnects the earbuds to the Mac, as Connect in System Settings does.
+    /// Like `disconnectDevice`, a Bluetooth link operation, not a command to
+    /// the earbuds. Blocks the Bluetooth thread for the few seconds a page
+    /// takes; `completion` gets whether the link came up.
+    func reconnectDevice(address: String, completion: @escaping (Bool) -> Void) {
+        onBluetoothThread {
+            guard let device = IOBluetoothDevice(addressString: address) else {
+                completion(false)
+                return
+            }
+            if device.isConnected() {
+                completion(true)
+                return
+            }
+            let result = device.openConnection()
+            completion(result == kIOReturnSuccess && device.isConnected())
+        }
+    }
+
     // MARK: - Sending (one command at a time)
 
     /// Queues one already-framed packet for the control channel.
