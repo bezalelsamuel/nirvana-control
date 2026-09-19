@@ -347,6 +347,18 @@ final class DeviceManager: ObservableObject {
         return .connecting
     }
 
+    /// A `nirvanacontrol://anc` / `ambient` / `off` link, e.g. from Shortcuts'
+    /// Open URLs action. Same path as a widget tap; any other link is only
+    /// logged, never acted on.
+    func handleLink(_ url: URL) {
+        guard let mode = AncMode(link: url) else {
+            log("Ignored link \(url.absoluteString) — use nirvanacontrol://anc, ambient or off.")
+            return
+        }
+        log("Link: \(url.absoluteString)")
+        requestAncMode(mode)
+    }
+
     /// Mirrors current state into the App Group so the widget can render it,
     /// then asks WidgetKit to redraw.
     private func publishToWidget() {

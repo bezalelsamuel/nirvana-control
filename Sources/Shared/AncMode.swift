@@ -26,3 +26,30 @@ enum AncMode: UInt8, CaseIterable, Identifiable, Hashable {
         }
     }
 }
+
+// MARK: - Links
+
+extension AncMode {
+    /// The URL scheme the app registers, for Shortcuts' Open URLs action.
+    static let linkScheme = "nirvanacontrol"
+
+    /// The word in a link that picks each mode: `nirvanacontrol://anc`.
+    var linkName: String {
+        switch self {
+        case .off: return "off"
+        case .on: return "anc"
+        case .transparency: return "ambient"
+        }
+    }
+
+    /// The mode a `nirvanacontrol://…` link asks for, or nil for any other
+    /// link. Case-insensitive, and tolerant of a trailing slash and of the
+    /// `nirvanacontrol:anc` form (no `//`, so no host).
+    init?(link url: URL) {
+        guard url.scheme?.lowercased() == Self.linkScheme else { return nil }
+        let raw = url.host ?? url.path
+        let name = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+        guard let mode = Self.allCases.first(where: { $0.linkName == name }) else { return nil }
+        self = mode
+    }
+}
