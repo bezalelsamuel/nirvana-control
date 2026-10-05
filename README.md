@@ -18,7 +18,7 @@ Unofficial and not affiliated with boAt.
 ## Features
 
 - **Noise control:** ANC, Ambient or Off, from the menu bar, the widget, a
-  global hotkey, Siri/Shortcuts, or `nirvanacontrol://` links
+  global hotkey, Siri (via Shortcuts), or `nirvanacontrol://` links
 - **8-band EQ** with presets and saved custom presets
 - **Battery** for left, right and case, with low-battery notifications
 - **In-ear detection** toggle
@@ -46,15 +46,25 @@ installs it to `/Applications/Nirvana Control.app` and refreshes the widget.
 Xcode. To sign with your own team, change `DEVELOPMENT_TEAM` and the App Group
 ID in `project.yml` and the entitlements in `Support/`.
 
-## Shortcuts links
+## Siri and Shortcuts
 
-Use these with the Shortcuts **Open URLs** action:
+The app switches modes from these links:
 
 | Link | Mode |
 | --- | --- |
 | `nirvanacontrol://anc` | Noise cancelling |
 | `nirvanacontrol://ambient` | Ambient |
 | `nirvanacontrol://off` | Off |
+
+To control it with Siri, make one shortcut per mode:
+
+1. Open the **Shortcuts** app and create a new shortcut.
+2. Add the **Open URLs** action and paste a link from the table.
+3. Name the shortcut what you want to say, e.g. **Nirvana ANC**.
+
+Then say "Hey Siri, Nirvana ANC". Siri runs shortcuts by name, so the app
+switches mode without opening a window. Use names that include "Nirvana":
+plain names like "noise cancelling" can be taken over by AirPods or HomeKit.
 
 ## Project layout
 
