@@ -4,8 +4,7 @@ A macOS menu bar app and Notification Center widget for **boAt Nirvana Ion ANC**
 earbuds. boAt only ships Android and iOS apps; this brings the main controls to
 the Mac.
 
-Unofficial and not affiliated with boAt. The control protocol was worked out by
-studying how the official Android app talks to the earbuds.
+Unofficial and not affiliated with boAt.
 
 ## Features
 
@@ -63,10 +62,7 @@ project.yml         XcodeGen project definition
 
 ## Notes
 
-- The earbuds use the wuqi chipset protocol over RFCOMM. The command bytes and
-  where each came from are documented in comments in
-  `Sources/BoatMenuBar/Wuqi/`.
 - Quit the app normally rather than killing it. A killed app can leave the
   earbuds holding a stale session and refusing new connections.
-- If the phone's boAt app is connected to the earbuds, it may hold the control
-  channel and block the Mac.
+- The earbuds accept one controlling device at a time. If a phone is holding
+  the connection, the Mac may not be able to connect.
