@@ -6,6 +6,11 @@ the Mac.
 
 Unofficial and not affiliated with boAt.
 
+<p align="center">
+  <img src="https://cdn.shopify.com/s/files/1/0057/8938/4802/files/NION-ANC-FI_Black01.png?v=1702893834" alt="boAt Nirvana Ion ANC earbuds and case" width="300"><br>
+  <sub><a href="https://www.boat-lifestyle.com/products/nirvana-ion-anc-earbuds">boAt Nirvana Ion ANC</a> (image: boAt)</sub>
+</p>
+
 ## Features
 
 - **Noise control:** ANC, Ambient or Off, from the menu bar, the widget, a
