@@ -6,6 +6,10 @@ the Mac.
 
 Unofficial and not affiliated with boAt.
 
+> [!TIP]
+> **Different boAt earbuds?** [boat-tws-commands](https://github.com/bezalelsamuel/boat-tws-commands)
+> has command references for 57 Airdopes and Nirvana models to adapt this app.
+
 <p align="center">
   <img src="https://cdn.shopify.com/s/files/1/0057/8938/4802/files/NION-ANC-FI_Black01.png?v=1702893834" alt="boAt Nirvana Ion ANC earbuds and case" width="300"><br>
   <sub><a href="https://www.boat-lifestyle.com/products/nirvana-ion-anc-earbuds">boAt Nirvana Ion ANC</a> (image: boAt)</sub>
